@@ -10,10 +10,19 @@ Original file is located at
 
 #4.   Classe Local_server: """
 
+import socket
+
 class Local_server:
-    def __init__(self, allowed_clients, model, host):
-        self.clients = allowed_clients
-        self.sockets = [create_socket(i) for i in self.clients] # Placeholder line
+    def __init__(self, allowed_clients, model, host = "127.0.0.1", port = 61234):
+        #self.host = host
+
+        # Creates socket to listen for connections and binds it to a TCP port
+        self.host_socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
+        self.host_socket.bind((host, port))
+
+        self.clients = allowed_clients # Might not be necessary
+        self.sockets = {} # Creates dictionary mapping sockets to the respective client IP address
+        self.keep_listening = True # Controls whether or not to keep listening for new connections/data transmissions
         
         self.frames = [] # Initializes frame list from clients
         self.stitched_image = None
@@ -22,16 +31,41 @@ class Local_server:
 
         self.inferences = []
 
-        self.host = host
-        self.host_socket = create_socket(host) # Placeholder line
-
     def listen(self):
         # Asynchronous method
-        for socket in self.sockets: # Placeholder block
+
+        while self.keep_listening is True:
+            print("Listening for connections...")
+            self.host_socket.listen() # Listens for connections
+            connection, address = self.host_socket.accept() # Accepts it once a request is received
+            print(f"Connected to {address}.")
+            self.sockets[address] = connection
+            break # Stays here just while testing
+        
+        """
+        # Placeholder block
+        for socket in self.sockets: 
             if socket.listen() == True:
                 socket.accept()
+        """
 
-    def receive_data(self, socket):
+    def receive_data(self, socket, address):
+        # Asynchronous method
+
+        # Placeholder block
+        while self.keep_listening is True:
+            data = socket.recv(1024)
+            if not data:
+                pass #break
+            else:
+                print(f"Received {data!r}")
+                socket.sendall(data) # Stays here just while testing # Echoes back to client
+            break # Stays here just while testing
+        socket.close() # Closes connection
+        self.sockets.pop(address) # Deletes socket reference
+        #del self.sockets[address] # Deletes socket reference
+
+        """
         success, data = socket.buffer_read() # Placeholder line
         if success == True:
             if type(data) == "frames": # Placeholder block
@@ -43,7 +77,8 @@ class Local_server:
                 print("Data type invalid. No data read.")
         else:
             print("Buffer_read unsuccessful. No data read.")
-
+        """
+        
     def stitch_images(self):
         self.stiched_image = stitching_algorithm(self.frames) # Placeholder line
         self.frames = []
@@ -54,3 +89,15 @@ class Local_server:
 
     def send_data(self): # WIP
         pass
+    
+    def mainloop(self):
+        self.listen()
+        address = list(self.sockets.keys())[0]
+        self.receive_data(self.sockets[address], address)
+
+
+if __name__ == "__main__":
+    print("Running...")
+    testserver = Local_server("list of clients", "model")
+    testserver.mainloop()
+    print("End.")

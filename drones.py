@@ -11,6 +11,9 @@ Original file is located at
 #1.   Superclasse DroneT0: 
 """
 
+import cv2
+import socket
+
 class DroneT0:
     def __init__(self, vidwidth = 640, vidheight = 480):
         self.frames = [] # Initializes frame list
@@ -33,29 +36,42 @@ class DroneT0:
         self.frames.pop[0]
         self.i += 1
 
-"""#2.   Subclasse DroneT1 (Super de T2): """
+""" #2.   Subclasse DroneT1 (Super de T2): """
 
 class DroneT1(DroneT0):
-    def __init__(self, host, vidwidth = 640, vidheight = 480):
-        super().__init__(self, vidwidth, vidheight)
+    def __init__(self, host = "127.0.0.1", port = 61234, vidwidth = 640, vidheight = 480):
+        super().__init__(vidwidth, vidheight)
 
         self.host = host
-        self.socket = create_socket(self.host) # Placeholder line
+        self.port = port
+        self.socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
+        #self.socket.connect()
     
     def set_connection(self):
-        self.socket.connect() # Placeholder line
+        self.socket.connect((self.host, self.port))
 
-    def send_data(self):
+    def send_image(self):
+        self.socket.sendall(b"Test1")
+        data = self.socket.recv(1024)
+        print(f"Received {data!r}")
+        
+        """
         if self.socket.buffer_write(frame[0]): # Placeholder line
             self.frames.pop[0]
         else:
             self.set_connection() # Placeholder line
+        """
+
+    def mainloop(self):
+        # Placeholder block
+        self.set_connection()
+        self.send_image()
 
 """#3.   Subclasse DroneT2: """
 
 class DroneT2(DroneT1):
-    def __init__(self, host, model, vidwidth = 640, vidheight = 480):
-        super().__init__(self, host, vidwidth, vidheight)
+    def __init__(self, model, host = "127.0.0.1", port = 61234, vidwidth = 640, vidheight = 480):
+        super().__init__(self, host, port, vidwidth, vidheight)
 
         self.model = model
         self.inferences = []
@@ -69,3 +85,10 @@ class DroneT2(DroneT1):
     def get_inferences(self):
         self.inferences.extend(self.model.predict(self.frames))
         self.frames = []
+
+
+if __name__ == "__main__":
+    print("Running...")
+    testdrone = DroneT1()
+    testdrone.mainloop()
+    print("End.")
