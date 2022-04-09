@@ -12,83 +12,201 @@ Original file is located at
 """
 
 import cv2
+from datetime import datetime
+import numpy as np
 import socket
 
+#DEFAULT_HOST_IP = "PASTE HOST IPv4" # Use this if running on local network
+# or use socket.gethostbyname(socket.gethostname()) if running locally
+DEFAULT_HOST_IP = "127.0.0.1" # Use this if testing via localhost
+DEFAULT_HOST_PORT = 12345
+DEFAULT_VCAP_HEIGHT = 480
+DEFAULT_VCAP_WIDTH = 640
+
 class DroneT0:
-    def __init__(self, vidwidth = 640, vidheight = 480):
-        self.frames = [] # Initializes frame list
+    def __init__(self, vidwidth = DEFAULT_VCAP_WIDTH, vidheight = DEFAULT_VCAP_HEIGHT):
+        print("Initializing DroneT0 instance...")
+        self.frames = {} # Initializes frame dictionary
         
         self.video_cap = cv2.VideoCapture(index = 0) # Creates and configures video stream
         self.video_cap.set(propId = cv2.CAP_PROP_FRAME_WIDTH, value = vidwidth)
         self.video_cap.set(propId = cv2.CAP_PROP_FRAME_HEIGHT, value = vidheight)
 
-        self.i = 0
+        self.break_mainloop = False
+
+        self.files = ["teste.jpg"] # Image files that we will load and send to the server to test if everything is working
+
+        print("DroneT0 instance initialized.")
 
     def get_frame(self):
+        ## We would use this block if were actually capturing photos, but we will instead load from disk
+        """
         sucess, img = self.video_cap.read()
         if sucess == True:
-            self.frames.append(img)
+            geo = self.get_geopos()
+            self.frames[geo] = img
         else:
             print("Failed to capture image!")
+        """
+        geo = self.get_geopos()
+        self.frames[geo] = cv2.imread(self.files[0])
+        self.files.pop(0)
+        if len(self.files) == 0:
+            self.break_mainloop = True
 
-    def save_img(self):
-        cv2.imwrite("root/img-%d.jpg" % i, self.frames[0]) # Placeholder line
-        self.frames.pop[0]
-        self.i += 1
+    def get_geopos(self):
+        return self.files[0].split(".")[0] # Used for testing, real world application would need actual GPS data
+
+    def save_image(self):
+        if len(self.frames) != 0:
+            geo, image = self.frames.popitem()
+            date = datetime.now().strftime("%Y_%m_%d-%I:%M:%S_%p")
+            cv2.imwrite(f"{geo}-{date}.jpg", image) # Placeholder line
+
+    def mainloop(self):
+        while not self.break_mainloop:
+            self.get_frame()
+            self.save_image()
 
 """ #2.   Subclasse DroneT1 (Super de T2): """
 
 class DroneT1(DroneT0):
-    def __init__(self, host = "127.0.0.1", port = 61234, vidwidth = 640, vidheight = 480):
+    send_inferences = False
+    def __init__(self, host = DEFAULT_HOST_IP, port = 12345, vidwidth = DEFAULT_VCAP_WIDTH, vidheight = DEFAULT_VCAP_HEIGHT):
+        print("Initializing DroneT1 instance...")
+        
         super().__init__(vidwidth, vidheight)
 
         self.host = host
         self.port = port
         self.socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
         #self.socket.connect()
+
+        print("DroneT1 instance initialized.")
     
     def set_connection(self):
         self.socket.connect((self.host, self.port))
 
-    def send_image(self):
+    def send_data(self):
+        """
         self.socket.sendall(b"Test1")
         data = self.socket.recv(1024)
         print(f"Received {data!r}")
-        
         """
-        if self.socket.buffer_write(frame[0]): # Placeholder line
-            self.frames.pop[0]
+        
+        # Prepare image to be sent
+        print("[SEND_DATA] Encoding image...")
+        geo, frame = self.frames.popitem()
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+        result, imencode = cv2.imencode(".jpg", frame, encode_param)
+        imdata = np.array(imencode)
+        str_imdata = imdata.tostring()
+        print(type(str_imdata))
+        print(self.socket.getpeername())
+        print("[SEND_DATA] Image encoded.")
+
+        message = [("GEO", geo),
+                   ("IMG", str_imdata)]
+
+        if self.send_inferences is True:
+            infdata = np.array(self.inferences.get(geo))
+            str_infdata = infdata.tostring()
+            message.append(("INF", str_infdata))
+
+        # Send data with custom application protocol
+        for header, payload in message:
+            server_answer = "NACK"
+            while server_answer != "ACK ": # Sends header
+                print(f"[SEND_DATA] Sending header {header}...")
+                self.socket.sendall(f"{header}".encode("utf-8"))
+                server_answer = self.socket.recv(4).decode("utf-8")
+            print(f"[SEND_DATA] {header} header delivered.")
+            
+            server_answer = "NACK"
+            while server_answer != "ACK ": # Sends length of payload
+                print(f"[SEND_DATA] Sending length of {header}...")
+                self.socket.sendall(str(len(payload)).ljust(16).encode("utf-8"))
+                server_answer = self.socket.recv(4).decode("utf-8")
+            print(f"[SEND_DATA] {header} length delivered.")
+            
+            server_answer = "NACK"
+            while server_answer != "ACK ": # Sends payload
+                print(f"[SEND_DATA] Sending {header} payload...")
+                if type(payload) == str:
+                    self.socket.sendall(payload.encode("utf-8"))
+                else:
+                    self.socket.sendall(payload)
+                server_answer = self.socket.recv(4).decode("utf-8")
+            print(f"[SEND_DATA] {header} payload delivered.")
+
+        self.socket.sendall("END".encode("utf-8"))
+        if self.socket.recv(4).decode("utf-8") != "NEXT":
+            print("[SEND_DATA] Message malformed, trying again...")
+            return False
         else:
-            self.set_connection() # Placeholder line
+            print("[SEND_DATA] Data transfer successful.")
+            return True
+            
+        """
+        #self.socket.sendall(bytes(str(len(str_data)).ljust(16), "utf-8"))
+        self.socket.sendall(str(len(str_data)).ljust(16).encode("utf-8"))
+        print("Sending image.")
+        self.socket.sendall(str_data)
+        answer = self.socket.recv(10)
+        if str(answer) == "ACK":
+            print("Data sent successfully!")
         """
 
     def mainloop(self):
-        # Placeholder block
         self.set_connection()
-        self.send_image()
+        while not self.break_mainloop:
+            self.get_frame()
+            success = False
+            while success is False:
+                success = self.send_data()
+        self.socket.sendall("CLS".encode("utf-8"))
 
 """#3.   Subclasse DroneT2: """
 
 class DroneT2(DroneT1):
-    def __init__(self, model, host = "127.0.0.1", port = 61234, vidwidth = 640, vidheight = 480):
-        super().__init__(self, host, port, vidwidth, vidheight)
+    send_inferences = True
+    def __init__(self, model, host = DEFAULT_HOST_IP, port = DEFAULT_HOST_PORT, vidwidth = DEFAULT_VCAP_WIDTH, vidheight = DEFAULT_VCAP_HEIGHT):
+        print("Initializing DroneT2 instance...")
+        
+        super().__init__(host, port, vidwidth, vidheight)
 
         self.model = model
-        self.inferences = []
+        self.inferences = {}
 
+        print("DroneT2 instance initialized.")
+
+    """
     def send_results(self):
         if self.socket.buffer_write(inferences[0]): # Placeholder line
             self.inferences.pop[0]
         else:
             self.set_connection() # Placeholder line
+    """
     
     def get_inferences(self):
-        self.inferences.extend(self.model.predict(self.frames))
-        self.frames = []
+        for geo in self.frames:
+            if self.inferences.get(geo) is None: # Is there an image that hasn't been processed yet?
+                self.inferences[geo] = self.model.predict(self.frames[geo])
+        #self.frames = []
 
+    def mainloop(self):
+        self.set_connection()
+        while not self.break_mainloop:
+            self.get_frame()
+            self.get_inferences()
+            while success is False:
+                success = self.send_data()
+        self.socket.sendall("CLS".encode("utf-8"))
 
 if __name__ == "__main__":
     print("Running...")
-    testdrone = DroneT1()
-    testdrone.mainloop()
+    test1 = DroneT1()
+    #test2 = DroneT2(None)
+    #print(f"{test1.send_inferences} {test2.send_inferences}")
+    test1.mainloop()
     print("End.")

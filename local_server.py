@@ -10,74 +10,171 @@ Original file is located at
 
 #4.   Classe Local_server: """
 
+import cv2
+import numpy as np
 import socket
+import threading
+
+#DEFAULT_HOST_IP = socket.gethostbyname(socket.gethostname()) # Use this if running on local network
+DEFAULT_HOST_IP = "127.0.0.1" # Use this if testing via localhost
+DEFAULT_HOST_PORT = 12345
+
+def tprint(lock, message): # Just so different threads don't mess up stdout when printing
+    lock.acquire()
+    print(message)
+    lock.release()    
 
 class Local_server:
-    def __init__(self, allowed_clients, model, host = "127.0.0.1", port = 61234):
-        #self.host = host
+    def __init__(self, allowed_clients, model, host = DEFAULT_HOST_IP, port = DEFAULT_HOST_PORT):
+
+        print("Initializing Local_server instance...")
 
         # Creates socket to listen for connections and binds it to a TCP port
         self.host_socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
         self.host_socket.bind((host, port))
 
         self.clients = allowed_clients # Might not be necessary
-        self.sockets = {} # Creates dictionary mapping sockets to the respective client IP address
+        self.sockets = {} # Creates dictionary mapping client IP addresses to the threads handling their respective sockets
         self.keep_listening = True # Controls whether or not to keep listening for new connections/data transmissions
+
+        self.threading_lock = threading.Lock() # Creates semaphore so different sockets don't save/access data at the same time
+        self.print_lock = threading.Lock() # Used so threads can print in an organized way 
         
-        self.frames = [] # Initializes frame list from clients
+        self.frames = {} # Initializes frame dict from clients
         self.stitched_image = None
 
         self.model = model
 
-        self.inferences = []
+        self.inferences = {}
+
+        print("Local_server instance initialized.")
 
     def listen(self):
         # Asynchronous method
 
         while self.keep_listening is True:
-            print("Listening for connections...")
+            tprint(self.print_lock, "[LISTEN] Listening for connections...")
             self.host_socket.listen() # Listens for connections
-            connection, address = self.host_socket.accept() # Accepts it once a request is received
-            print(f"Connected to {address}.")
-            self.sockets[address] = connection
+            connection, address = self.host_socket.accept() # Accepts it once a connection request is received
+            
+            tprint(self.print_lock, f"[LISTEN] Connected to {address}.")
+            self.sockets[address] = threading.Thread(target = self.receive_data, args = (connection, address))
+            tprint(self.print_lock, f"[LISTEN] Created thread to handle {address} connection: {self.sockets[address]}")
+            self.sockets[address].start() # Creates and starts new thread to handle connection
+            
             break # Stays here just while testing
+        tprint(self.print_lock, "[LISTEN] Stopped listening for connections.")
         
-        """
-        # Placeholder block
-        for socket in self.sockets: 
-            if socket.listen() == True:
-                socket.accept()
-        """
+        addresses = list(self.sockets.keys())
+        tprint(self.print_lock, "[LISTEN] Waiting for connection threads to end their tasks...")
+        for address in addresses:
+            self.sockets[address].join() # When self.keep_listening is set to false, closes threads once they are done closing the connections
+            tprint(self.print_lock, f"[LISTEN] Terminated thread {self.sockets[address]}")
+        print("[LISTEN] All connection threads closed.")
 
-    def receive_data(self, socket, address):
+    def receive_data(self, sock, address):
         # Asynchronous method
+        close_connection = False
+        peer = sock.getpeername()
+        while (self.keep_listening is True) and (close_connection is False):
+            tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Waiting for new message from {address}...")
+            message = {"GEO" : None,
+                       "IMG" : None,
+                       "INF" : None}
+            
+            # Receive data with custom application protocol
+            while True:
+                dtype = sock.recv(3) # Gets message data type
+                tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received header {dtype.decode('utf-8')}.")
+                if dtype.decode("utf-8") == "END": # Is end of message?
+                    tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: End of message.")
+                    break
+                
+                if dtype.decode("utf-8") in ["GEO", "IMG", "INF", "CLS"]:
+                    sock.sendall("ACK ".encode("utf-8")) # Data type is known
+                else:
+                    socke.sendall("NACK".encode("utf-8")) # Data type is unknown
+                    tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Invalid header {dtype.decode('utf-8')}.")
+                    continue
+                
+                length = sock.recv(16)
+                tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received payload length {length.decode('utf-8')}.")
+                if int(length.decode("utf-8")) > 0:
+                    sock.sendall("ACK ".encode("utf-8")) # Valid data length
+                else:
+                    sock.sendall("NACK".encode("utf-8")) # Invalid data length
+                    tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Invalid payload length {length.decode('utf-8')}.")
+                    continue
 
-        # Placeholder block
-        while self.keep_listening is True:
+                rawdata = sock.recv(int(length.decode("utf-8")))
+                tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received payload of size {len(rawdata)}.")
+                if dtype.decode("utf-8") == "GEO": # Is geographic coordinates?
+                    message["GEO"] = rawdata.decode("utf-8")
+                    sock.sendall("ACK ".encode("utf-8"))
+                    
+                elif dtype.decode("utf-8") == "IMG": # Is image?
+                    #decoded = rawdata.decode("utf-8")
+                    data = np.fromstring(rawdata, dtype = "uint8")
+                    imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
+                    message["IMG"] = imdecode
+                    sock.sendall("ACK ".encode("utf-8"))
+                    
+                elif dtype.decode("utf-8") == "INF": # Is array of inferences?
+                    #decoded = rawdata.decode("utf-8")
+                    data = np.fromstring(rawdata, dtype = "uint8")
+                    message["INF"] = data
+                
+                elif dtype.decode("utf-8") == "CLS": # Is asking to close connection?
+                    tprint(self.print_lock, f"[RECEIVE_DATA] {socket}: Client closed connection.")
+                    close_connection = True
+                    break
+            
+            # Once the whole message is received, save the data
+            tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Saving data...")
+            if message["GEO"] is None or message["IMG"] is None:
+                sock.sendall("REPT".encode("utf-8")) # Message is malformed, asks client to resend
+                tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Unable to save, message malformed.")
+            else:
+                self.threading_lock.acquire() # Acquires lock to save data
+                self.frames[message["GEO"]] = message["IMG"]
+                #if not message["INF"] is None:
+                self.inferences[message["GEO"]] = message["INF"]
+                self.threading_lock.release() # Releases lock once data is saved
+                sock.sendall("NEXT".encode("utf-8")) # Message was comprehended
+                tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Data successfully saved.")
+                
+                
+                """
+                lenght = socket.recv(16)
+                str_data = socket.recv(int(lenght))
+                data = np.fromstring(str_data, dtype = "uint8")
+                imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
+
+                # Do something with image
+                cv2.imshow("", imdecode)
+                cv2.waitKey()
+                socket.sendall(b"ACK")
+                """
+            
+        """
+            tprint(self.print_lock, f"Local_server.receive_data: Waiting for data from {address}...")
             data = socket.recv(1024)
+            tprint(self.print_lock, f"Local_server.receive_data: Data received from {address}.")
             if not data:
-                pass #break
-            else:
-                print(f"Received {data!r}")
+                pass # Placeholder line
+            else: # Handle data received
+                self.threading_lock.acquire() # Locks semaphore to handle received data
+                
+                tprint(self.print_lock, f"Local_server.receive_data: Received {data!r}") # Placeholder line
                 socket.sendall(data) # Stays here just while testing # Echoes back to client
+                tprint(self.print_lock, f"Local_server.receive_data: Echoing to {address}.")
+                self.threading_lock.release() # Unlocks semaphore once data is handled
             break # Stays here just while testing
-        socket.close() # Closes connection
-        self.sockets.pop(address) # Deletes socket reference
+        """
+        
+        socket.close()
+        #self.sockets.pop(address) # Deletes socket reference
         #del self.sockets[address] # Deletes socket reference
-
-        """
-        success, data = socket.buffer_read() # Placeholder line
-        if success == True:
-            if type(data) == "frames": # Placeholder block
-                self.frames.extend(data) # if data requires no conversion into a list of frames
-                # else, convert and then append/extend
-            elif type(data) == "inferences": # Placeholder block
-                self.inferences.extend(data) # idem
-            else:
-                print("Data type invalid. No data read.")
-        else:
-            print("Buffer_read unsuccessful. No data read.")
-        """
         
     def stitch_images(self):
         self.stiched_image = stitching_algorithm(self.frames) # Placeholder line
@@ -87,13 +184,14 @@ class Local_server:
         self.inferences.extend(self.model.predict(self.stiched_image))
         #print(predictions)
 
-    def send_data(self): # WIP
-        pass
+    #def send_data(self): # WIP
+    #    pass
     
     def mainloop(self):
+        #pass
         self.listen()
-        address = list(self.sockets.keys())[0]
-        self.receive_data(self.sockets[address], address)
+        #address = list(self.sockets.keys())[0]
+        #self.receive_data(self.sockets[address], address)
 
 
 if __name__ == "__main__":
