@@ -14,6 +14,7 @@ Original file is located at
 import cv2
 from datetime import datetime
 import numpy as np
+import pickle
 import socket
 
 FILES = ["drone_images\\00.jpg",
@@ -114,20 +115,23 @@ class DroneT1(DroneT0):
         print("[SEND_DATA] Encoding image...")
         geo, frame = self.frames.popitem()
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-        result, imencode = cv2.imencode(".jpg", frame, encode_param)
-        imdata = np.array(imencode)
-        str_imdata = imdata.tostring()
-        print(type(str_imdata))
-        print(self.socket.getpeername())
+        #result, imencode = cv2.imencode(".jpg", frame, encode_param)
+        imgdata = pickle.dumps(frame, 0)
+        img = pickle.loads(imgdata,fix_imports = True, encoding = "bytes")
+        #cv2.imshow("", img)
+        #cv2.waitKey()
+        #imdata = np.array(imencode, dtype = "uint8")
+        #str_imdata = imdata.tostring()
         print("[SEND_DATA] Image encoded.")
 
         message = [("GEO", geo),
-                   ("IMG", str_imdata)]
+                   ("IMG", imgdata)]
 
         if self.send_inferences is True:
-            infdata = np.array(self.inferences.get(geo))
-            str_infdata = infdata.tostring()
-            message.append(("INF", str_infdata))
+            data = np.array(self.inferences.get(geo))
+            infdata = pickle.dumps(data, 0)
+            #str_infdata = infdata.tostring()
+            message.append(("INF", infdata))
 
         # Send data with custom application protocol
         for header, payload in message:
@@ -162,16 +166,6 @@ class DroneT1(DroneT0):
         else:
             print("[SEND_DATA] Data transfer successful.")
             return True
-            
-        """
-        #self.socket.sendall(bytes(str(len(str_data)).ljust(16), "utf-8"))
-        self.socket.sendall(str(len(str_data)).ljust(16).encode("utf-8"))
-        print("Sending image.")
-        self.socket.sendall(str_data)
-        answer = self.socket.recv(10)
-        if str(answer) == "ACK":
-            print("Data sent successfully!")
-        """
 
     def mainloop(self):
         self.set_connection()
@@ -180,6 +174,7 @@ class DroneT1(DroneT0):
             success = False
             while success is False:
                 success = self.send_data()
+            time.sleep(2) # Artificial delay
         self.socket.sendall("CLS".encode("utf-8"))
 
 """#3.   Subclasse DroneT2: """
@@ -195,14 +190,6 @@ class DroneT2(DroneT1):
         self.inferences = {}
 
         print("DroneT2 instance initialized.")
-
-    """
-    def send_results(self):
-        if self.socket.buffer_write(inferences[0]): # Placeholder line
-            self.inferences.pop[0]
-        else:
-            self.set_connection() # Placeholder line
-    """
     
     def get_inferences(self):
         for geo in self.frames:

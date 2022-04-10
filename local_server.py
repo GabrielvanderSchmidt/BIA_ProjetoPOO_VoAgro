@@ -11,7 +11,9 @@ Original file is located at
 #4.   Classe Local_server: """
 
 import cv2
+from flask import Flask, render_template
 import numpy as np
+import pickle
 import socket
 import threading
 import time
@@ -29,7 +31,7 @@ def tprint(lock, message): # Just so different threads don't mess up stdout when
     lock.release()    
 
 class Local_server:
-    def __init__(self, allowed_clients, model, host = HOST_IP, port = HOST_PORT):
+    def __init__(self, model, host = HOST_IP, port = HOST_PORT):
 
         print("Initializing Local_server instance...")
 
@@ -37,7 +39,7 @@ class Local_server:
         self.host_socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
         self.host_socket.bind((host, port))
 
-        self.clients = allowed_clients # Might not be necessary
+        #self.clients = allowed_clients # Might not be necessary
         self.sockets = {} # Creates dictionary mapping client IP addresses to the threads handling their respective sockets
         self.keep_listening = True # Controls whether or not to keep listening for new connections/data transmissions
 
@@ -45,7 +47,7 @@ class Local_server:
         self.print_lock = threading.Lock() # Used so threads can print in an organized way 
         
         self.frames = {} # Initializes frame dict from clients
-        self.stitched_image = np.zeros((FINALIMG_HEIGHT, FINALIMG_WIDTH, FINALIMG_CHANNELS))
+        self.stitched_image = np.zeros((FINALIMG_HEIGHT, FINALIMG_WIDTH, FINALIMG_CHANNELS), dtype = "uint8")
         self.image_nrows = 3
         self.image_ncolumns = 5
 
@@ -94,7 +96,6 @@ class Local_server:
                 tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received header {dtype.decode('utf-8')}.")
                 if dtype.decode("utf-8") == "END": # Is end of message?
                     tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: End of message.")
-                    #send ACK
                     break
                 
                 if dtype.decode("utf-8") in ["GEO", "IMG", "INF", "CLS"]:
@@ -113,21 +114,21 @@ class Local_server:
                     tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Invalid payload length {length.decode('utf-8')}.")
                     continue
 
-                rawdata = sock.recv(int(length.decode("utf-8")))
+                rawdata = sock.recv(int(length.decode("utf-8"))*2)
                 tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received payload of size {len(rawdata)}.")
                 if dtype.decode("utf-8") == "GEO": # Is geographic coordinates?
                     message["GEO"] = rawdata.decode("utf-8")
                     sock.sendall("ACK ".encode("utf-8"))
                     
                 elif dtype.decode("utf-8") == "IMG": # Is image?
-                    #decoded = rawdata.decode("utf-8")
-                    data = np.fromstring(rawdata, dtype = "uint8")
-                    imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
-                    message["IMG"] = imdecode
+                    data = pickle.loads(rawdata, fix_imports = True, encoding = "bytes")
+                    #imdecode = cv2.imdecode(data, cv2.IMREAD_COLOR)
+                    #data = np.fromstring(rawdata, dtype = "uint8")
+                    #imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
+                    message["IMG"] = data#imdecode
                     sock.sendall("ACK ".encode("utf-8"))
                     
                 elif dtype.decode("utf-8") == "INF": # Is array of inferences?
-                    #decoded = rawdata.decode("utf-8")
                     data = np.fromstring(rawdata, dtype = "uint8")
                     message["INF"] = data
                 
@@ -144,48 +145,13 @@ class Local_server:
             else:
                 self.threading_lock.acquire() # Acquires lock to save data
                 self.frames[message["GEO"]] = message["IMG"]
-                #if not message["INF"] is None:
                 self.inferences[message["GEO"]] = message["INF"]
                 self.threading_lock.release() # Releases lock once data is saved
                 sock.sendall("NEXT".encode("utf-8")) # Message was comprehended
                 tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Data successfully saved.")
-                
-                
-                """
-                lenght = socket.recv(16)
-                str_data = socket.recv(int(lenght))
-                data = np.fromstring(str_data, dtype = "uint8")
-                imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
-
-                # Do something with image
-                cv2.imshow("", imdecode)
-                cv2.waitKey()
-                socket.sendall(b"ACK")
-                """
-            
-        """
-            tprint(self.print_lock, f"Local_server.receive_data: Waiting for data from {address}...")
-            data = socket.recv(1024)
-            tprint(self.print_lock, f"Local_server.receive_data: Data received from {address}.")
-            if not data:
-                pass # Placeholder line
-            else: # Handle data received
-                self.threading_lock.acquire() # Locks semaphore to handle received data
-                
-                tprint(self.print_lock, f"Local_server.receive_data: Received {data!r}") # Placeholder line
-                socket.sendall(data) # Stays here just while testing # Echoes back to client
-                tprint(self.print_lock, f"Local_server.receive_data: Echoing to {address}.")
-                self.threading_lock.release() # Unlocks semaphore once data is handled
-            break # Stays here just while testing
-        """
-        
         socket.close()
-        #self.sockets.pop(address) # Deletes socket reference
-        #del self.sockets[address] # Deletes socket reference
         
     def stitch_images(self):
-        #self.stitched_image = stitching_algorithm(self.frames) # Placeholder line
-        #self.frames = []
         self.threading_lock.acquire()
         keys = list(self.frames.keys())
         tprint(self.print_lock, str(keys))
@@ -197,10 +163,11 @@ class Local_server:
             ending_y = starting_y + tile_shape[0]
             ending_x = starting_x + tile_shape[1]
             self.stitched_image[starting_y : ending_y, starting_x : ending_x] = tile
-            cv2.imshow("stitched_image", self.stitched_image)
-            cv2.waitKey()
         self.threading_lock.release()
-
+        cv2.imshow("stitched_image", self.stitched_image)
+        cv2.waitKey()
+        cv2.imwrite("webserver\\webserver_image.jpg", self.stitched_image)
+        
     def get_inferences(self, geo, image):
         self.threading_lock.acquire()
         self.inferences[geo] = self.model.predict(image)
@@ -217,16 +184,28 @@ class Local_server:
         listening_thread = threading.Thread(target = self.listen)
         listening_thread.start()
         while True:
+            time.sleep(2)
+            self.stitch_images()
             if len(self.frames) == 15:
-                time.sleep(1)
-                self.stitch_images()
+                self.keep_listening = False
             
         #address = list(self.sockets.keys())[0]
         #self.receive_data(self.sockets[address], address)
 
 
+app = Flask(__name__, template_folder = "webserver")
+
+@app.route("/")
+@app.route("/index")
+def home():
+    return render_template("index.html")
+
 if __name__ == "__main__":
     print("Running...")
-    testserver = Local_server("list of clients", "model")
+    testserver = Local_server("model")
     testserver.mainloop()
+    
+    flaskthread = threading.Thread(target = app.run)
+    flaskthread.start()
+    flaskthreas.join()
     print("End.")
