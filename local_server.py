@@ -14,10 +14,14 @@ import cv2
 import numpy as np
 import socket
 import threading
+import time
 
-#DEFAULT_HOST_IP = socket.gethostbyname(socket.gethostname()) # Use this if running on local network
-DEFAULT_HOST_IP = "127.0.0.1" # Use this if testing via localhost
-DEFAULT_HOST_PORT = 12345
+#HOST_IP = socket.gethostbyname(socket.gethostname()) # Use this if running on local network
+HOST_IP = "127.0.0.1" # Use this if testing via localhost
+HOST_PORT = 12345
+FINALIMG_HEIGHT = 477
+FINALIMG_WIDTH = 850
+FINALIMG_CHANNELS = 3
 
 def tprint(lock, message): # Just so different threads don't mess up stdout when printing
     lock.acquire()
@@ -25,7 +29,7 @@ def tprint(lock, message): # Just so different threads don't mess up stdout when
     lock.release()    
 
 class Local_server:
-    def __init__(self, allowed_clients, model, host = DEFAULT_HOST_IP, port = DEFAULT_HOST_PORT):
+    def __init__(self, allowed_clients, model, host = HOST_IP, port = HOST_PORT):
 
         print("Initializing Local_server instance...")
 
@@ -41,7 +45,9 @@ class Local_server:
         self.print_lock = threading.Lock() # Used so threads can print in an organized way 
         
         self.frames = {} # Initializes frame dict from clients
-        self.stitched_image = None
+        self.stitched_image = np.zeros((FINALIMG_HEIGHT, FINALIMG_WIDTH, FINALIMG_CHANNELS))
+        self.image_nrows = 3
+        self.image_ncolumns = 5
 
         self.model = model
 
@@ -88,6 +94,7 @@ class Local_server:
                 tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received header {dtype.decode('utf-8')}.")
                 if dtype.decode("utf-8") == "END": # Is end of message?
                     tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: End of message.")
+                    #send ACK
                     break
                 
                 if dtype.decode("utf-8") in ["GEO", "IMG", "INF", "CLS"]:
@@ -177,19 +184,43 @@ class Local_server:
         #del self.sockets[address] # Deletes socket reference
         
     def stitch_images(self):
-        self.stiched_image = stitching_algorithm(self.frames) # Placeholder line
-        self.frames = []
+        #self.stitched_image = stitching_algorithm(self.frames) # Placeholder line
+        #self.frames = []
+        self.threading_lock.acquire()
+        keys = list(self.frames.keys())
+        tprint(self.print_lock, str(keys))
+        for key in keys:
+            tile = self.frames[key]
+            tile_shape = tile.shape
+            starting_y = int(key[0]) * tile_shape[0]
+            starting_x = int(key[1]) * tile_shape[1]
+            ending_y = starting_y + tile_shape[0]
+            ending_x = starting_x + tile_shape[1]
+            self.stitched_image[starting_y : ending_y, starting_x : ending_x] = tile
+            cv2.imshow("stitched_image", self.stitched_image)
+            cv2.waitKey()
+        self.threading_lock.release()
 
-    def get_inferences(self):
-        self.inferences.extend(self.model.predict(self.stiched_image))
+    def get_inferences(self, geo, image):
+        self.threading_lock.acquire()
+        self.inferences[geo] = self.model.predict(image)
+        self.threading_lock.release()
         #print(predictions)
 
+    def dump2datawarehouse(self, image, inferences):
+        pass
     #def send_data(self): # WIP
     #    pass
     
     def mainloop(self):
         #pass
-        self.listen()
+        listening_thread = threading.Thread(target = self.listen)
+        listening_thread.start()
+        while True:
+            if len(self.frames) == 15:
+                time.sleep(1)
+                self.stitch_images()
+            
         #address = list(self.sockets.keys())[0]
         #self.receive_data(self.sockets[address], address)
 

@@ -16,15 +16,31 @@ from datetime import datetime
 import numpy as np
 import socket
 
-#DEFAULT_HOST_IP = "PASTE HOST IPv4" # Use this if running on local network
+FILES = ["drone_images\\00.jpg",
+         "drone_images\\01.jpg",
+         "drone_images\\02.jpg",
+         "drone_images\\03.jpg",
+         "drone_images\\04.jpg",
+         "drone_images\\10.jpg",
+         "drone_images\\11.jpg",
+         "drone_images\\12.jpg",
+         "drone_images\\13.jpg",
+         "drone_images\\14.jpg",
+         "drone_images\\20.jpg",
+         "drone_images\\21.jpg",
+         "drone_images\\22.jpg",
+         "drone_images\\23.jpg",
+         "drone_images\\24.jpg"]
+#FILES = [os.path.abspath(file) for file in FILES]
+#HOST_IP = "PASTE HOST IPv4" # Use this if running on local network
 # or use socket.gethostbyname(socket.gethostname()) if running locally
-DEFAULT_HOST_IP = "127.0.0.1" # Use this if testing via localhost
-DEFAULT_HOST_PORT = 12345
-DEFAULT_VCAP_HEIGHT = 480
-DEFAULT_VCAP_WIDTH = 640
+HOST_IP = "127.0.0.1" # Use this if testing via localhost
+HOST_PORT = 12345
+VCAP_HEIGHT = 480
+VCAP_WIDTH = 640
 
 class DroneT0:
-    def __init__(self, vidwidth = DEFAULT_VCAP_WIDTH, vidheight = DEFAULT_VCAP_HEIGHT):
+    def __init__(self, vidwidth = VCAP_WIDTH, vidheight = VCAP_HEIGHT):
         print("Initializing DroneT0 instance...")
         self.frames = {} # Initializes frame dictionary
         
@@ -34,7 +50,7 @@ class DroneT0:
 
         self.break_mainloop = False
 
-        self.files = ["teste.jpg"] # Image files that we will load and send to the server to test if everything is working
+        self.files = FILES# Image files that we will load and send to the server to test if everything is working
 
         print("DroneT0 instance initialized.")
 
@@ -55,7 +71,7 @@ class DroneT0:
             self.break_mainloop = True
 
     def get_geopos(self):
-        return self.files[0].split(".")[0] # Used for testing, real world application would need actual GPS data
+        return self.files[0].split("\\")[1].split(".")[0] # Used for testing, real world application would need actual GPS data
 
     def save_image(self):
         if len(self.frames) != 0:
@@ -72,7 +88,7 @@ class DroneT0:
 
 class DroneT1(DroneT0):
     send_inferences = False
-    def __init__(self, host = DEFAULT_HOST_IP, port = 12345, vidwidth = DEFAULT_VCAP_WIDTH, vidheight = DEFAULT_VCAP_HEIGHT):
+    def __init__(self, host = HOST_IP, port = 12345, vidwidth = VCAP_WIDTH, vidheight = VCAP_HEIGHT):
         print("Initializing DroneT1 instance...")
         
         super().__init__(vidwidth, vidheight)
@@ -170,7 +186,7 @@ class DroneT1(DroneT0):
 
 class DroneT2(DroneT1):
     send_inferences = True
-    def __init__(self, model, host = DEFAULT_HOST_IP, port = DEFAULT_HOST_PORT, vidwidth = DEFAULT_VCAP_WIDTH, vidheight = DEFAULT_VCAP_HEIGHT):
+    def __init__(self, model, host = HOST_IP, port = HOST_PORT, vidwidth = VCAP_WIDTH, vidheight = VCAP_HEIGHT):
         print("Initializing DroneT2 instance...")
         
         super().__init__(host, port, vidwidth, vidheight)
