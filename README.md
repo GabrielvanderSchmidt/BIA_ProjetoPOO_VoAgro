@@ -7,7 +7,7 @@
 - Descrição do projeto 
 - Ferramentas utilizadas
 - Acesso ao projeto 
-- Autores
+- Desenvolvedores
 - Contribuidor
 
 ## Descrição de projeto
@@ -27,7 +27,7 @@ O sistema VoAgro atua em conjunto com um drone que irá fornecer as imagens que 
 
 [Servidor local](https://github.com/GabrielvanderSchmidt/BIA_ProjetoPOO_VoAgro/blob/main/local_server.py)
 
-## Autores
+## Desenvolvedores
 - [Gabriel van der Schmidt](https://github.com/GabrielvanderSchmidt)
 - [Elisa Ayumi Masasi de Oliveira](https://github.com/elisayumi)
 - [Lucca Emmanuel Pineli Simões](https://github.com/lucca11235)
