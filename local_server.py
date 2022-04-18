@@ -28,7 +28,7 @@ FINALIMG_CHANNELS = 3
 def tprint(lock, message): # Just so different threads don't mess up stdout when printing
     lock.acquire()
     print(message)
-    lock.release()    
+    lock.release()
 
 class Local_server:
     def __init__(self, model, host = HOST_IP, port = HOST_PORT):
@@ -44,8 +44,8 @@ class Local_server:
         self.keep_listening = True # Controls whether or not to keep listening for new connections/data transmissions
 
         self.threading_lock = threading.Lock() # Creates semaphore so different sockets don't save/access data at the same time
-        self.print_lock = threading.Lock() # Used so threads can print in an organized way 
-        
+        self.print_lock = threading.Lock() # Used so threads can print in an organized way
+
         self.frames = {} # Initializes frame dict from clients
         self.stitched_image = np.zeros((FINALIMG_HEIGHT, FINALIMG_WIDTH, FINALIMG_CHANNELS), dtype = "uint8")
         self.image_nrows = 3
@@ -64,15 +64,15 @@ class Local_server:
             tprint(self.print_lock, "[LISTEN] Listening for connections...")
             self.host_socket.listen() # Listens for connections
             connection, address = self.host_socket.accept() # Accepts it once a connection request is received
-            
+
             tprint(self.print_lock, f"[LISTEN] Connected to {address}.")
             self.sockets[address] = threading.Thread(target = self.receive_data, args = (connection, address))
             tprint(self.print_lock, f"[LISTEN] Created thread to handle {address} connection: {self.sockets[address]}")
             self.sockets[address].start() # Creates and starts new thread to handle connection
-            
+
             break # Stays here just while testing
         tprint(self.print_lock, "[LISTEN] Stopped listening for connections.")
-        
+
         addresses = list(self.sockets.keys())
         tprint(self.print_lock, "[LISTEN] Waiting for connection threads to end their tasks...")
         for address in addresses:
@@ -89,7 +89,7 @@ class Local_server:
             message = {"GEO" : None,
                        "IMG" : None,
                        "INF" : None}
-            
+
             # Receive data with custom application protocol
             while True:
                 dtype = sock.recv(3) # Gets message data type
@@ -97,14 +97,14 @@ class Local_server:
                 if dtype.decode("utf-8") == "END": # Is end of message?
                     tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: End of message.")
                     break
-                
+
                 if dtype.decode("utf-8") in ["GEO", "IMG", "INF", "CLS"]:
                     sock.sendall("ACK ".encode("utf-8")) # Data type is known
                 else:
                     socke.sendall("NACK".encode("utf-8")) # Data type is unknown
                     tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Invalid header {dtype.decode('utf-8')}.")
                     continue
-                
+
                 length = sock.recv(16)
                 tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Received payload length {length.decode('utf-8')}.")
                 if int(length.decode("utf-8")) > 0:
@@ -119,7 +119,7 @@ class Local_server:
                 if dtype.decode("utf-8") == "GEO": # Is geographic coordinates?
                     message["GEO"] = rawdata.decode("utf-8")
                     sock.sendall("ACK ".encode("utf-8"))
-                    
+
                 elif dtype.decode("utf-8") == "IMG": # Is image?
                     data = pickle.loads(rawdata, fix_imports = True, encoding = "bytes")
                     #imdecode = cv2.imdecode(data, cv2.IMREAD_COLOR)
@@ -127,16 +127,16 @@ class Local_server:
                     #imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
                     message["IMG"] = data#imdecode
                     sock.sendall("ACK ".encode("utf-8"))
-                    
+
                 elif dtype.decode("utf-8") == "INF": # Is array of inferences?
                     data = np.fromstring(rawdata, dtype = "uint8")
                     message["INF"] = data
-                
+
                 elif dtype.decode("utf-8") == "CLS": # Is asking to close connection?
                     tprint(self.print_lock, f"[RECEIVE_DATA] {socket}: Client closed connection.")
                     close_connection = True
                     break
-            
+
             # Once the whole message is received, save the data
             tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Saving data...")
             if message["GEO"] is None or message["IMG"] is None:
@@ -150,7 +150,7 @@ class Local_server:
                 sock.sendall("NEXT".encode("utf-8")) # Message was comprehended
                 tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Data successfully saved.")
         socket.close()
-        
+
     def stitch_images(self):
         self.threading_lock.acquire()
         keys = list(self.frames.keys())
@@ -167,7 +167,7 @@ class Local_server:
         cv2.imshow("stitched_image", self.stitched_image)
         cv2.waitKey()
         cv2.imwrite("webserver\\webserver_image.jpg", self.stitched_image)
-        
+
     def get_inferences(self, geo, image):
         self.threading_lock.acquire()
         self.inferences[geo] = self.model.predict(image)
@@ -178,7 +178,7 @@ class Local_server:
         pass
     #def send_data(self): # WIP
     #    pass
-    
+
     def mainloop(self):
         #pass
         listening_thread = threading.Thread(target = self.listen)
@@ -188,7 +188,7 @@ class Local_server:
             self.stitch_images()
             if len(self.frames) == 15:
                 self.keep_listening = False
-            
+
         #address = list(self.sockets.keys())[0]
         #self.receive_data(self.sockets[address], address)
 
@@ -204,8 +204,8 @@ if __name__ == "__main__":
     print("Running...")
     testserver = Local_server("model")
     testserver.mainloop()
-    
+
     flaskthread = threading.Thread(target = app.run)
     flaskthread.start()
-    flaskthreas.join()
+    flaskthread.join()
     print("End.")
