@@ -8,14 +8,7 @@ tiles = [(f"{int(x/M)}{int(y/N)}.jpg", im[x:x+M,y:y+N]) for x in range(0,im.shap
 
 print(len(tiles))
 print(im.shape)
-"""
-cv2.imshow("", im)
-cv2.waitKey()
-for i, t in tiles:
-    print(t.shape)
-    cv2.imshow("", t)
-    cv2.waitKey()
-"""
+
 tshape = tiles[0][1].shape
 canvas = np.zeros((tshape[0] * 3, tshape[1] * 5, tshape[2]), dtype = "uint8")
 print(canvas.shape)

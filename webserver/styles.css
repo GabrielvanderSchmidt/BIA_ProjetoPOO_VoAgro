@@ -17,3 +17,8 @@
   border-radius: 20px 20px 20px 20px;
   overflow: hidden;
 }
+
+#update {
+  color: black;
+  background-color: white;
+}
