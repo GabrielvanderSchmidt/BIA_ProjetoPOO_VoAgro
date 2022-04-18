@@ -22,7 +22,8 @@ O sistema VoAgro atua em conjunto com um drone que irá fornecer as imagens que 
 > [local_server.py](https://github.com/GabrielvanderSchmidt/BIA_ProjetoPOO_VoAgro/blob/main/local_server.py): Contém a classe Local_server. Essa classe recebe imagens e inferências, e as disponibiliza através de serviço Flask.
 
 ## Ferramentas utilizadas
-![python](https://img.olhardigital.com.br/wp-content/uploads/2020/04/20200423030657-1131x450.jpg)
+![python](https://static.ybox.vn/2017/12/8/ff805dde-dbf1-11e7-95ed-cac091044fd5.png)
+![flask](https://pedroglp.com/dist/flaskic.png)
 
 ## Acesso ao projeto
 [Código Drones](https://github.com/GabrielvanderSchmidt/BIA_ProjetoPOO_VoAgro/blob/main/drones.py)
