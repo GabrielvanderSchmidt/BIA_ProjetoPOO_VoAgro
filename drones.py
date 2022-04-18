@@ -33,7 +33,7 @@ FILES = ["drone_images\\00.jpg",
          "drone_images\\22.jpg",
          "drone_images\\23.jpg",
          "drone_images\\24.jpg"]
-#FILES = [os.path.abspath(file) for file in FILES]
+
 #HOST_IP = "PASTE HOST IPv4" # Use this if running on local network
 # or use socket.gethostbyname(socket.gethostname()) if running locally
 HOST_IP = "127.0.0.1" # Use this if testing via localhost
@@ -52,7 +52,7 @@ class DroneT0:
 
         self.break_mainloop = False
 
-        self.files = FILES# Image files that we will load and send to the server to test if everything is working
+        self.files = FILES # Image files that we will load and send to the server to test if everything is working
 
         print("DroneT0 instance initialized.")
 
@@ -98,7 +98,6 @@ class DroneT1(DroneT0):
         self.host = host
         self.port = port
         self.socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
-        #self.socket.connect()
 
         print("DroneT1 instance initialized.")
 
@@ -106,23 +105,13 @@ class DroneT1(DroneT0):
         self.socket.connect((self.host, self.port))
 
     def send_data(self):
-        """
-        self.socket.sendall(b"Test1")
-        data = self.socket.recv(1024)
-        print(f"Received {data!r}")
-        """
-
         # Prepare image to be sent
         print("[SEND_DATA] Encoding image...")
         geo, frame = self.frames.popitem()
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
-        #result, imencode = cv2.imencode(".jpg", frame, encode_param)
         imgdata = pickle.dumps(frame, 0)
         img = pickle.loads(imgdata,fix_imports = True, encoding = "bytes")
-        #cv2.imshow("", img)
-        #cv2.waitKey()
-        #imdata = np.array(imencode, dtype = "uint8")
-        #str_imdata = imdata.tostring()
+
         print("[SEND_DATA] Image encoded.")
 
         message = [("GEO", geo),
@@ -131,7 +120,6 @@ class DroneT1(DroneT0):
         if self.send_inferences is True:
             data = np.array(self.inferences.get(geo))
             infdata = pickle.dumps(data, 0)
-            #str_infdata = infdata.tostring()
             message.append(("INF", infdata))
 
         # Send data with custom application protocol
@@ -196,7 +184,6 @@ class DroneT2(DroneT1):
         for geo in self.frames:
             if self.inferences.get(geo) is None: # Is there an image that hasn't been processed yet?
                 self.inferences[geo] = self.model.predict(self.frames[geo])
-        #self.frames = []
 
     def mainloop(self):
         self.set_connection()
@@ -210,7 +197,5 @@ class DroneT2(DroneT1):
 if __name__ == "__main__":
     print("Running...")
     test1 = DroneT1()
-    #test2 = DroneT2(None)
-    #print(f"{test1.send_inferences} {test2.send_inferences}")
     test1.mainloop()
     print("End.")

@@ -10,20 +10,27 @@ Original file is located at
 
 #4.   Classe Local_server: """
 
+import csv
 import cv2
 from flask import Flask, render_template
 import numpy as np
+import os
 import pickle
 import socket
 import threading
 import time
 
-#HOST_IP = socket.gethostbyname(socket.gethostname()) # Use this if running on local network
-HOST_IP = "127.0.0.1" # Use this if testing via localhost
-HOST_PORT = 12345
+DW_PATH = "datawarehouse.csv"
 FINALIMG_HEIGHT = 477
 FINALIMG_WIDTH = 850
 FINALIMG_CHANNELS = 3
+
+#HOST_IP = socket.gethostbyname(socket.gethostname()) # Use this if running on local network
+HOST_IP = "127.0.0.1" # Use this if testing via localhost
+HOST_PORT = 12345
+
+TILE_ROWS = 3
+TILE_COLUMNS = 5
 
 def tprint(lock, message): # Just so different threads don't mess up stdout when printing
     lock.acquire()
@@ -39,7 +46,6 @@ class LocalServer:
         self.host_socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
         self.host_socket.bind((host, port))
 
-        #self.clients = allowed_clients # Might not be necessary
         self.sockets = {} # Creates dictionary mapping client IP addresses to the threads handling their respective sockets
         self.keep_listening = True # Controls whether or not to keep listening for new connections/data transmissions
 
@@ -48,8 +54,8 @@ class LocalServer:
 
         self.frames = {} # Initializes frame dict from clients
         self.stitched_image = np.zeros((FINALIMG_HEIGHT, FINALIMG_WIDTH, FINALIMG_CHANNELS), dtype = "uint8")
-        self.image_nrows = 3
-        self.image_ncolumns = 5
+        self.image_nrows = TILE_ROWS
+        self.image_ncolumns = TILE_COLUMNS
 
         self.model = model
 
@@ -58,7 +64,7 @@ class LocalServer:
         print("Local_server instance initialized.")
 
     def listen(self):
-        # Asynchronous method
+        # Threaded method
 
         while self.keep_listening is True:
             tprint(self.print_lock, "[LISTEN] Listening for connections...")
@@ -69,8 +75,7 @@ class LocalServer:
             self.sockets[address] = threading.Thread(target = self.receive_data, args = (connection, address))
             tprint(self.print_lock, f"[LISTEN] Created thread to handle {address} connection: {self.sockets[address]}")
             self.sockets[address].start() # Creates and starts new thread to handle connection
-
-            break # Stays here just while testing
+            
         tprint(self.print_lock, "[LISTEN] Stopped listening for connections.")
 
         addresses = list(self.sockets.keys())
@@ -81,7 +86,7 @@ class LocalServer:
         print("[LISTEN] All connection threads closed.")
 
     def receive_data(self, sock, address):
-        # Asynchronous method
+        # Threaded method
         close_connection = False
         peer = sock.getpeername()
         while (self.keep_listening is True) and (close_connection is False):
@@ -122,9 +127,6 @@ class LocalServer:
 
                 elif dtype.decode("utf-8") == "IMG": # Is image?
                     data = pickle.loads(rawdata, fix_imports = True, encoding = "bytes")
-                    #imdecode = cv2.imdecode(data, cv2.IMREAD_COLOR)
-                    #data = np.fromstring(rawdata, dtype = "uint8")
-                    #imdecode = cv2.imdecode(data, cv2.IMWRITE_JPEG_QUALITY)
                     message["IMG"] = data#imdecode
                     sock.sendall("ACK ".encode("utf-8"))
 
@@ -152,47 +154,51 @@ class LocalServer:
         socket.close()
 
     def stitch_images(self):
-        self.threading_lock.acquire()
+        self.threading_lock.acquire() # Acquires lock to read data
         keys = list(self.frames.keys())
-        tprint(self.print_lock, str(keys))
-        for key in keys:
+        for key in keys: # Calculates frame position based on GEO
             tile = self.frames[key]
             tile_shape = tile.shape
             starting_y = int(key[0]) * tile_shape[0]
             starting_x = int(key[1]) * tile_shape[1]
             ending_y = starting_y + tile_shape[0]
             ending_x = starting_x + tile_shape[1]
-            self.stitched_image[starting_y : ending_y, starting_x : ending_x] = tile
-        self.threading_lock.release()
-        cv2.imshow("stitched_image", self.stitched_image)
-        cv2.waitKey()
-        cv2.imwrite("webserver\\webserver_image.jpg", self.stitched_image)
+            self.stitched_image[starting_y : ending_y, starting_x : ending_x] = tile # Places frame in its place
+        self.threading_lock.release() # Releases lock once data has been read
+        cv2.imwrite("webserver\\webserver_image.jpg", self.stitched_image) # Saves resulting image so webservice can use it
 
-    def get_inferences(self, geo, image):
+    def get_inferences(self, geo):
         self.threading_lock.acquire()
-        self.inferences[geo] = self.model.predict(image)
+        image = self.frames.get(geo)
+        self.inferences[geo] = self.model.predict(image) # Gets predictions from model
         self.threading_lock.release()
-        #print(predictions)
 
-    def dump2datawarehouse(self, image, inferences):
-        pass
-    #def send_data(self): # WIP
-    #    pass
+    def dump2datawarehouse(self, geo):
+        self.threading_lock.acquire()
+        image = self.frames.get(geo)
+        inferences = self.inferences.get(geo)
+        self.threading_lock.release()
+        if image is None: # Checks if parameters are valid
+            return False
+        if inferences is None:
+            self.get_inferences(geo)
+            inferences = self.inferences.get(geo)
+        if not os.path.exists(DW_PATH):
+            with open(DW_PATH, mode = "w") as file: # If file doesn't exist
+                pass # Create file and add header
+        # Saves image and appends its path to the csv file alongside its inferences
+        return True
+        
 
     def mainloop(self):
-        #pass
         listening_thread = threading.Thread(target = self.listen)
         listening_thread.start()
 
         while self.keep_listening:
-            time.sleep(2)
+            time.sleep(2) # Delay while waiting for new images
             self.stitch_images()
-            if len(self.frames) == 15:
-                self.keep_listening = False
-
-        #address = list(self.sockets.keys())[0]
-        #self.receive_data(self.sockets[address], address)
-
+            if len(self.frames) == TILE_ROWS * TILE_COLUMNS:
+                self.keep_listening = False # Once all images have been received, stop
 
 app = Flask(__name__, template_folder = "webserver")
 
@@ -204,9 +210,11 @@ def home():
 if __name__ == "__main__":
     print("Running...")
     testserver = LocalServer("model")
+    # Initializes webservice on new thread
+    flaskthread = threading.Thread(target = app.run)
+    flaskthread.start()    
+    # Initializes server mainloop
     testserver.mainloop()
 
-    flaskthread = threading.Thread(target = app.run)
-    flaskthread.start()
     flaskthread.join()
     print("End.")
