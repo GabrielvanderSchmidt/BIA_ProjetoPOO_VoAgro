@@ -30,10 +30,10 @@ def tprint(lock, message): # Just so different threads don't mess up stdout when
     print(message)
     lock.release()
 
-class Local_server:
+class LocalServer:
     def __init__(self, model, host = HOST_IP, port = HOST_PORT):
 
-        print("Initializing Local_server instance...")
+        print("Initializing LocalServer instance...")
 
         # Creates socket to listen for connections and binds it to a TCP port
         self.host_socket = socket.socket(family = socket.AF_INET, type = socket.SOCK_STREAM)
@@ -101,7 +101,7 @@ class Local_server:
                 if dtype.decode("utf-8") in ["GEO", "IMG", "INF", "CLS"]:
                     sock.sendall("ACK ".encode("utf-8")) # Data type is known
                 else:
-                    socke.sendall("NACK".encode("utf-8")) # Data type is unknown
+                    sock.sendall("NACK".encode("utf-8")) # Data type is unknown
                     tprint(self.print_lock, f"[RECEIVE_DATA] {peer}: Invalid header {dtype.decode('utf-8')}.")
                     continue
 
@@ -183,7 +183,8 @@ class Local_server:
         #pass
         listening_thread = threading.Thread(target = self.listen)
         listening_thread.start()
-        while True:
+
+        while self.keep_listening:
             time.sleep(2)
             self.stitch_images()
             if len(self.frames) == 15:
@@ -202,7 +203,7 @@ def home():
 
 if __name__ == "__main__":
     print("Running...")
-    testserver = Local_server("model")
+    testserver = LocalServer("model")
     testserver.mainloop()
 
     flaskthread = threading.Thread(target = app.run)

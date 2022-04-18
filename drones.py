@@ -8,13 +8,14 @@ Original file is located at
 
 # **Projeto de POO - VoAgro**
 
-#1.   Superclasse DroneT0: 
+#1.   Superclasse DroneT0:
 """
 
 import cv2
 from datetime import datetime
 import numpy as np
 import pickle
+import time
 import socket
 
 FILES = ["drone_images\\00.jpg",
@@ -44,7 +45,7 @@ class DroneT0:
     def __init__(self, vidwidth = VCAP_WIDTH, vidheight = VCAP_HEIGHT):
         print("Initializing DroneT0 instance...")
         self.frames = {} # Initializes frame dictionary
-        
+
         self.video_cap = cv2.VideoCapture(index = 0) # Creates and configures video stream
         self.video_cap.set(propId = cv2.CAP_PROP_FRAME_WIDTH, value = vidwidth)
         self.video_cap.set(propId = cv2.CAP_PROP_FRAME_HEIGHT, value = vidheight)
@@ -91,7 +92,7 @@ class DroneT1(DroneT0):
     send_inferences = False
     def __init__(self, host = HOST_IP, port = 12345, vidwidth = VCAP_WIDTH, vidheight = VCAP_HEIGHT):
         print("Initializing DroneT1 instance...")
-        
+
         super().__init__(vidwidth, vidheight)
 
         self.host = host
@@ -100,7 +101,7 @@ class DroneT1(DroneT0):
         #self.socket.connect()
 
         print("DroneT1 instance initialized.")
-    
+
     def set_connection(self):
         self.socket.connect((self.host, self.port))
 
@@ -110,7 +111,7 @@ class DroneT1(DroneT0):
         data = self.socket.recv(1024)
         print(f"Received {data!r}")
         """
-        
+
         # Prepare image to be sent
         print("[SEND_DATA] Encoding image...")
         geo, frame = self.frames.popitem()
@@ -141,14 +142,14 @@ class DroneT1(DroneT0):
                 self.socket.sendall(f"{header}".encode("utf-8"))
                 server_answer = self.socket.recv(4).decode("utf-8")
             print(f"[SEND_DATA] {header} header delivered.")
-            
+
             server_answer = "NACK"
             while server_answer != "ACK ": # Sends length of payload
                 print(f"[SEND_DATA] Sending length of {header}...")
                 self.socket.sendall(str(len(payload)).ljust(16).encode("utf-8"))
                 server_answer = self.socket.recv(4).decode("utf-8")
             print(f"[SEND_DATA] {header} length delivered.")
-            
+
             server_answer = "NACK"
             while server_answer != "ACK ": # Sends payload
                 print(f"[SEND_DATA] Sending {header} payload...")
@@ -183,14 +184,14 @@ class DroneT2(DroneT1):
     send_inferences = True
     def __init__(self, model, host = HOST_IP, port = HOST_PORT, vidwidth = VCAP_WIDTH, vidheight = VCAP_HEIGHT):
         print("Initializing DroneT2 instance...")
-        
+
         super().__init__(host, port, vidwidth, vidheight)
 
         self.model = model
         self.inferences = {}
 
         print("DroneT2 instance initialized.")
-    
+
     def get_inferences(self):
         for geo in self.frames:
             if self.inferences.get(geo) is None: # Is there an image that hasn't been processed yet?
